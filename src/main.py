@@ -5,7 +5,7 @@ from data_loader import load_and_preprocess_data
 from train_random_forest import train_random_forest
 from train_decision_tree import train_decision_tree
 from evaluate import evaluate_ids
-from train_lstm import train_lstm_model
+from train_lstm import tune_and_train_lstm
 from sklearn.metrics import classification_report
 from feature_importance import plot_importance
 import matplotlib.pyplot as plt
@@ -27,7 +27,7 @@ unique, counts = np.unique(y, return_counts=True)
 print(dict(zip(unique, counts)))
 
 # ======================
-# Stratified Split 80/20
+# RF / DT — random stratified split
 # ======================
 from sklearn.model_selection import train_test_split
 
@@ -39,39 +39,39 @@ print("\nTrain class distribution:", dict(zip(*np.unique(y_train, return_counts=
 print("Test class distribution: ", dict(zip(*np.unique(y_test,  return_counts=True))))
 
 # ======================
-# Train LSTM 
+# LSTM — same random stratified split as RF/DT (fair comparison)
 # ======================
 
-LSTM_MODEL_PATH = os.path.join(RESULTS_DIR, "lstm_model.keras")
-LSTM_SCALER_PATH = os.path.join(RESULTS_DIR, "lstm_scaler.pkl")
+print(f"\nLSTM train: {len(y_train):,} | LSTM test: {len(y_test):,}")
 
-if os.path.exists(LSTM_MODEL_PATH) and os.path.exists(LSTM_SCALER_PATH):
-    print("\nLSTM model already exists — skipping retraining.")
-    import tensorflow as tf
-    from train_lstm import create_sequences
-    lstm_model = tf.keras.models.load_model(LSTM_MODEL_PATH)
-    lstm_scaler = joblib.load(LSTM_SCALER_PATH)
-    X_test_scaled = lstm_scaler.transform(X_test)
-    X_test_seq, y_test_seq = create_sequences(X_test_scaled, y_test, time_steps=20)
-else:
-    lstm_model, lstm_scaler, X_test_seq, y_test_seq = train_lstm_model(
-        X_train, y_train, X_test, y_test
-    )
-    lstm_model.save(LSTM_MODEL_PATH)
-    joblib.dump(lstm_scaler, LSTM_SCALER_PATH)
-    print("LSTM model saved.")
+LSTM_MODEL_PATH  = os.path.join(RESULTS_DIR, "lstm_model.keras")
+LSTM_SCALER_PATH = os.path.join(RESULTS_DIR, "lstm_scaler.pkl")
+TUNER_DIR        = os.path.join(os.environ.get('TEMP', 'C:\\Temp'), 'lstm_iot_tuner')
+
+lstm_model, lstm_scaler, X_test_seq, y_test_seq, best_hp = tune_and_train_lstm(
+    X_train, y_train,
+    X_test,  y_test,
+    tuner_dir=TUNER_DIR,
+    max_trials=15,
+    results_dir=RESULTS_DIR,
+)
+
+lstm_model.save(LSTM_MODEL_PATH)
+joblib.dump(lstm_scaler, LSTM_SCALER_PATH)
+print("LSTM model saved.")
 
 y_pred_lstm = np.argmax(lstm_model.predict(X_test_seq), axis=1)
 
-print("\n--- LSTM Report ---")
-print(classification_report(
-    y_test_seq,
-    y_pred_lstm,
-    target_names=["Normal", "Backdoor", "Password", "DDoS", "Injection", "Ransomware", "XSS", "Scanning"]
-))
+CLASS_NAMES = ["Normal", "Backdoor", "Password", "DDoS", "Injection", "Ransomware", "XSS", "Scanning"]
 
-lstm_report = classification_report(y_test_seq, y_pred_lstm,
-    target_names=["Normal", "Backdoor", "Password", "DDoS", "Injection", "Ransomware", "XSS", "Scanning"], output_dict=True)
+print("\n--- LSTM Report ---")
+print(classification_report(y_test_seq, y_pred_lstm, target_names=CLASS_NAMES))
+
+lstm_report = classification_report(
+    y_test_seq, y_pred_lstm,
+    target_names=CLASS_NAMES,
+    output_dict=True,
+)
 pd.DataFrame(lstm_report).transpose().to_csv(os.path.join(RESULTS_DIR, "LSTM_report.csv"))
 
 cm = confusion_matrix(y_test_seq, y_pred_lstm)

@@ -1,0 +1,11 @@
+{
+  "units_1": 64,
+  "units_2": 128,
+  "dropout": 0.2,
+  "learning_rate": 0.0005,
+  "dense_units": 32,
+  "num_lstm_layers": 2,
+  "bidirectional": false,
+  "batch_norm": true,
+  "l2_reg": 0.0001
+}
